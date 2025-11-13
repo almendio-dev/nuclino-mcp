@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -19,6 +20,16 @@ export class HttpTransport implements ITransport {
 
   constructor(private config: TransportConfig) {
     this.app = express();
+    
+    // Configure CORS to allow all origins
+    const corsOptions = {
+      origin: '*',
+      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'mcp-session-id', 'nuclino-api-key'],
+      credentials: false
+    };
+    this.app.use(cors(corsOptions));
+    
     this.app.use(express.json());
     this.setupRoutes();
   }
