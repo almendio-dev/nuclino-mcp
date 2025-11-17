@@ -93,6 +93,12 @@ export class HttpTransport implements ITransport {
         const server = this.createMcpServer(nuclinoApiKey);
         await server.connect(transport);
         
+        // CRITICAL CLOUDFLARE WORKAROUND: Send 2KB+ of padding to force streaming
+        // Cloudflare buffers responses until ~2KB is sent. We send SSE comments (ignored by clients)
+        // to push past this threshold and trigger immediate streaming mode.
+        const padding = ': ' + ' '.repeat(2048) + '\n\n';
+        (res as any).write?.(padding);
+        
         logger.info(`Established MCP connection with session ID: ${sessionId}`);
         
         // Note: Do not send any response here - the SSEServerTransport has taken ownership of the response
