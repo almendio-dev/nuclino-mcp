@@ -47,42 +47,44 @@ export class HttpTransport implements ITransport {
     this.app.get('/mcp', async (req, res) => {
       logger.info('Received GET request to /mcp (establishing MCP connection)');
       
-      try {
-        // Validate Nuclino API key
-        const nuclinoApiKey = this.config.apiKey;
-        if (!nuclinoApiKey) {
-          logger.error('Nuclino API key not configured');
-          res.status(500).send('Server configuration error: Nuclino API key not set');
-          return;
-        }
-
-        // Create a new SSE transport for the client
-        // The endpoint for POST messages is '/messages'
-        const transport = new SSEServerTransport('/messages', res);
-        
-        // Get the session ID
-        const sessionId = transport.sessionId;
-        
-        // Store the transport by session ID
-        this.transports.set(sessionId, transport);
-        
-        // Set up onclose handler to clean up transport when closed
-        transport.onclose = () => {
-          logger.info(`MCP transport closed for session ${sessionId}`);
-          this.transports.delete(sessionId);
-        };
-        
-        // Create and connect the MCP server
-        const server = this.createMcpServer(nuclinoApiKey);
-        await server.connect(transport);
-        
-        logger.info(`Established MCP connection with session ID: ${sessionId}`);
-      } catch (error) {
-        logger.error('Error establishing MCP connection:', error);
-        if (!res.headersSent) {
-          res.status(500).send('Error establishing MCP connection');
-        }
+      // Validate Nuclino API key
+      const nuclinoApiKey = this.config.apiKey;
+      if (!nuclinoApiKey) {
+        logger.error('Nuclino API key not configured');
+        res.status(500).send('Server configuration error: Nuclino API key not set');
+        return;
       }
+
+      // Create a new SSE transport for the client
+      // The endpoint for POST messages is '/messages'
+      const transport = new SSEServerTransport('/messages', res);
+      
+      // Get the session ID
+      const sessionId = transport.sessionId;
+      
+      // Store the transport by session ID
+      this.transports.set(sessionId, transport);
+      
+      // Set up onclose handler to clean up transport when closed
+      transport.onclose = () => {
+        logger.info(`MCP transport closed for session ${sessionId}`);
+        this.transports.delete(sessionId);
+      };
+      
+      // Set up onerror handler to log errors
+      transport.onerror = (error) => {
+        logger.error(`MCP transport error for session ${sessionId}:`, error);
+      };
+      
+      // Create and connect the MCP server
+      // The server.connect() will call transport.start() which sends SSE headers and initial endpoint event
+      const server = this.createMcpServer(nuclinoApiKey);
+      await server.connect(transport);
+      
+      logger.info(`Established MCP connection with session ID: ${sessionId}`);
+      
+      // Note: Do not send any response here - the SSEServerTransport has taken ownership of the response
+      // and will manage it for the duration of the SSE connection
     });
 
     // Handle POST requests for client messages
