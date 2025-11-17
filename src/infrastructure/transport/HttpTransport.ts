@@ -87,26 +87,12 @@ export class HttpTransport implements ITransport {
         transport.onerror = (error) => {
           logger.error(`MCP transport error for session ${sessionId}:`, error);
         };
-        
         // Create and connect the MCP server
         // The server.connect() will call transport.start() which sends SSE headers and initial endpoint event
         const server = this.createMcpServer(nuclinoApiKey);
         await server.connect(transport);
         
-        // CRITICAL CLOUDFLARE WORKAROUND: Send 8KB+ of padding to force streaming
-        // Cloudflare buffers responses aggressively. We send SSE comments (ignored by clients)
-        // to push past buffering threshold and trigger immediate streaming mode.
-        // Using multiple writes with explicit flushes to ensure data is sent.
-        for (let i = 0; i < 4; i++) {
-          const padding = ': ' + 'x'.repeat(2048) + '\n\n';
-          (res as any).write?.(padding);
-          if (typeof (res as any).flush === 'function') {
-            (res as any).flush();
-          }
-        }
-        
         logger.info(`Established MCP connection with session ID: ${sessionId}`);
-        
         // Note: Do not send any response here - the SSEServerTransport has taken ownership of the response
         // and will manage it for the duration of the SSE connection
       } catch (error) {
