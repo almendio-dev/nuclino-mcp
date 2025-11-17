@@ -2,7 +2,7 @@
 	"mcpServers": {
 		"nuclino": {
 			"_description": "Nuclino MCP server - SSE transport for HTTP integration. NUCLINO_API_KEY must be set in the server's .env file. Optional: Include X-MCP-Auth-Key header if server has MCP_AUTH_KEY configured.",
-			"url": "http://localhost:3000/sse",
+			"url": "http://localhost:3000/mcp",
 			"type": "sse",
 			"headers": {
 				"X-MCP-Auth-Key": "your-mcp-auth-key-here (only if MCP_AUTH_KEY is set in server .env)"

@@ -19,7 +19,7 @@ This server supports two transport types:
 - Best for web applications and remote access
 - Supports multiple concurrent sessions via Server-Sent Events (SSE)
 - Two endpoints:
-  - `GET /sse` - Establish SSE connection for server-to-client messages
+  - `GET /mcp` - Establish MCP connection for server-to-client messages
   - `POST /messages?sessionId=xxx` - Send client-to-server JSON-RPC requests
 - Runs on port 3000 by default
 - Optional authentication via `X-MCP-Auth-Key` header
@@ -66,7 +66,7 @@ npm run start  # Production
 ```
 
 3. Connect your MCP client:
-   - Establish SSE connection: `GET http://localhost:3000/sse`
+   - Establish MCP connection: `GET http://localhost:3000/mcp`
    - Send messages: `POST http://localhost:3000/messages?sessionId={sessionId}`
 
 #### Authentication
@@ -162,7 +162,7 @@ The transport layer is abstracted to support multiple transport types:
 
 - `ITransport`: Common interface for all transports
 - `HttpTransport`: SSE-based HTTP transport with session management
-  - GET `/sse` endpoint for establishing SSE connections
+  - GET `/mcp` endpoint for establishing MCP connections
   - POST `/messages` endpoint for receiving client messages
   - Optional authentication via `X-MCP-Auth-Key` header
 - `StdioTransport`: Stdio-based transport for local usage

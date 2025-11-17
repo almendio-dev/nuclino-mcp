@@ -43,9 +43,9 @@ export class HttpTransport implements ITransport {
   }
 
   private setupRoutes() {
-    // Handle GET requests to establish SSE connection
-    this.app.get('/sse', async (req, res) => {
-      logger.info('Received GET request to /sse (establishing SSE stream)');
+    // Handle GET requests to establish MCP connection via SSE
+    this.app.get('/mcp', async (req, res) => {
+      logger.info('Received GET request to /mcp (establishing MCP connection)');
       
       try {
         // Validate Nuclino API key
@@ -68,7 +68,7 @@ export class HttpTransport implements ITransport {
         
         // Set up onclose handler to clean up transport when closed
         transport.onclose = () => {
-          logger.info(`SSE transport closed for session ${sessionId}`);
+          logger.info(`MCP transport closed for session ${sessionId}`);
           this.transports.delete(sessionId);
         };
         
@@ -76,11 +76,11 @@ export class HttpTransport implements ITransport {
         const server = this.createMcpServer(nuclinoApiKey);
         await server.connect(transport);
         
-        logger.info(`Established SSE stream with session ID: ${sessionId}`);
+        logger.info(`Established MCP connection with session ID: ${sessionId}`);
       } catch (error) {
-        logger.error('Error establishing SSE stream:', error);
+        logger.error('Error establishing MCP connection:', error);
         if (!res.headersSent) {
-          res.status(500).send('Error establishing SSE stream');
+          res.status(500).send('Error establishing MCP connection');
         }
       }
     });

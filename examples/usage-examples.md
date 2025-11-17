@@ -12,12 +12,13 @@ npm run build && npm run start
 ```
 
 ### Client Configuration
-When connecting to the HTTP server, include these headers:
+Connect to the HTTP server using Server-Sent Events:
+- Establish MCP connection: `GET http://localhost:3000/mcp`
+- Send messages: `POST http://localhost:3000/messages?sessionId={sessionId}`
+
+If the server has `MCP_AUTH_KEY` configured, include the authentication header:
 ```
-POST /mcp HTTP/1.1
-Host: localhost:3000
-Content-Type: application/json
-nuclino-api-key: your_api_key_here
+X-MCP-Auth-Key: your-mcp-auth-key-here
 ```
 
 ## Stdio Transport Example
