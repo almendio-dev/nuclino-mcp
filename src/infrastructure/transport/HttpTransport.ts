@@ -31,10 +31,7 @@ export class HttpTransport implements ITransport {
     
     // Configure CORS to allow all origins
     const corsOptions = {
-      origin: '*',
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'X-MCP-Auth-Key'],
-      credentials: false
+      origin: '*'
     };
     this.app.use(cors(corsOptions));
     
