@@ -161,6 +161,24 @@ export class HttpTransport implements ITransport {
 
   async stop(): Promise<void> {
     if (this.server) {
+      // First, close all active SSE transport connections
+      logger.info(`Closing ${this.transports.size} active SSE transport(s)`);
+      for (const [sessionId, transport] of this.transports.entries()) {
+        try {
+          transport.close();
+          logger.info(`Closed SSE transport for session ${sessionId}`);
+        } catch (error) {
+          logger.error(`Error closing SSE transport for session ${sessionId}`, error);
+        }
+      }
+      this.transports.clear();
+      
+      // Force close all HTTP connections (available in Node.js v18.2.0+)
+      if (typeof this.server.closeAllConnections === 'function') {
+        this.server.closeAllConnections();
+        logger.info('Forced closure of all HTTP connections');
+      }
+      
       return new Promise((resolve) => {
         this.server.close(() => {
           logger.info('HTTP server stopped');
