@@ -87,7 +87,6 @@ export class HttpTransport implements ITransport {
         // Create and connect the MCP server
         // The server.connect() will call transport.start() which sends SSE headers and initial endpoint event
         const server = this.createMcpServer(nuclinoApiKey);
-        await transport.start();
         await server.connect(transport);
         
         logger.info(`Established MCP connection with session ID: ${sessionId}`);
