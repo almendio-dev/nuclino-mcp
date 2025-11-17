@@ -37,7 +37,7 @@ const createLogger = (useStderr: boolean = false) => {
   }
 
   return winston.createLogger({
-    level: 'error',
+    level: 'info',
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.json()

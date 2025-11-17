@@ -26,6 +26,12 @@ async function main() {
     await serverManager.start();
     
     logger.info('Application started successfully');
+    
+    // Keep the process running for HTTP transport
+    if (config.type === 'http') {
+      // Prevent the process from exiting by keeping the event loop active
+      await new Promise(() => {});
+    }
   } catch (error) {
     logger.error('Failed to start application', error);
     process.exit(1);

@@ -15,11 +15,14 @@ A Model Context Protocol (MCP) server that provides access to Nuclino content th
 
 This server supports two transport types:
 
-### HTTP Transport (Default)
+### HTTP Transport with SSE (Default)
 - Best for web applications and remote access
-- Supports multiple concurrent sessions
-- Flexible authentication: API key via headers or environment variable
+- Supports multiple concurrent sessions via Server-Sent Events (SSE)
+- Two endpoints:
+  - `GET /sse` - Establish SSE connection for server-to-client messages
+  - `POST /messages?sessionId=xxx` - Send client-to-server JSON-RPC requests
 - Runs on port 3000 by default
+- Optional authentication via `X-MCP-Auth-Key` header
 
 ### Stdio Transport
 - Best for local development and CLI tools
@@ -39,20 +42,21 @@ npm install
 
 - `TRANSPORT_TYPE`: Set to 'http' (default) or 'stdio'
 - `PORT`: Port for HTTP transport (default: 3000)
-- `NUCLINO_API_KEY`: Required for stdio transport; optional for HTTP transport (can be provided via header instead)
+- `NUCLINO_API_KEY`: Required - Your Nuclino API key for accessing the Nuclino API
+- `MCP_AUTH_KEY`: Optional - If set, clients must provide this key via `X-MCP-Auth-Key` header for authentication
 
-### HTTP Transport
+### HTTP Transport with SSE
 
-The HTTP transport supports two authentication methods:
-
-#### Option 1: Environment Variable (Shared API Key)
-Best for development or when deploying a central server that all sessions share.
+The HTTP transport uses Server-Sent Events (SSE) for bidirectional communication:
 
 1. Create a `.env` file (copy from `.env.example`):
 ```bash
-NUCLINO_API_KEY=your_api_key_here
+NUCLINO_API_KEY=your-nuclino-api-key-here
 TRANSPORT_TYPE=http
 PORT=3000
+
+# Optional: Enable MCP server authentication
+# MCP_AUTH_KEY=your-secret-mcp-auth-key
 ```
 
 2. Start the server:
@@ -61,22 +65,22 @@ npm run dev  # Development
 npm run start  # Production
 ```
 
-3. Connect to the server at `http://localhost:3000/mcp` (no header required)
+3. Connect your MCP client:
+   - Establish SSE connection: `GET http://localhost:3000/sse`
+   - Send messages: `POST http://localhost:3000/messages?sessionId={sessionId}`
 
-#### Option 2: Header-Based (Per-Session API Key)
-Best when different clients need to use different API keys.
+#### Authentication
 
-1. Start the server:
+If you set `MCP_AUTH_KEY` in your `.env` file, clients must include the key in their POST requests:
+
 ```bash
-npm run dev  # Development
-npm run start  # Production
+curl -X POST "http://localhost:3000/messages?sessionId=abc123" \
+  -H "Content-Type: application/json" \
+  -H "X-MCP-Auth-Key: your-secret-mcp-auth-key" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
-2. Connect to the server at `http://localhost:3000/mcp`
-
-3. Include your Nuclino API key in the `nuclino-api-key` header with each request.
-
-**Note:** Header-based authentication takes precedence over environment variable. If both are provided, the header value will be used.
+If `MCP_AUTH_KEY` is not set, the authentication check is disabled and clients can connect without the header.
 
 ### Stdio Transport
 
@@ -157,9 +161,11 @@ The server follows Clean Architecture principles:
 The transport layer is abstracted to support multiple transport types:
 
 - `ITransport`: Common interface for all transports
-- `HttpTransport`: HTTP-based transport with session management
+- `HttpTransport`: SSE-based HTTP transport with session management
+  - GET `/sse` endpoint for establishing SSE connections
+  - POST `/messages` endpoint for receiving client messages
+  - Optional authentication via `X-MCP-Auth-Key` header
 - `StdioTransport`: Stdio-based transport for local usage
-- `TransportFactory`: Factory for creating transport instances
 
 ## Error Handling
 

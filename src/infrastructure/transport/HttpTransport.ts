@@ -2,8 +2,7 @@ import express from "express";
 import cors from "cors";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { ITransport, TransportConfig } from "./ITransport.js";
 import { logger } from "../http/Logger.js";
 import { NuclinoRepository } from "../nuclino/NuclinoRepository.js";
@@ -14,19 +13,27 @@ import { NuclinoMcpServer } from "../../presentation/McpServer.js";
 export class HttpTransport implements ITransport {
   private app: express.Application;
   private server: any;
-  private transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
-  private apiKeys: { [sessionId: string]: string } = {};
-  private repositories: { [sessionId: string]: NuclinoRepository } = {};
+  private transports: Map<string, SSEServerTransport> = new Map();
+  private mcpAuthKey?: string;
 
   constructor(private config: TransportConfig) {
     this.app = express();
     
+    // Load MCP auth key from environment (optional)
+    this.mcpAuthKey = process.env.MCP_AUTH_KEY;
+    
+    // Log authentication status
+    if (this.mcpAuthKey) {
+      logger.info('MCP authentication is enabled');
+    } else {
+      logger.info('MCP authentication is disabled');
+    }
+    
     // Configure CORS to allow all origins
     const corsOptions = {
       origin: '*',
-      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'mcp-session-id', 'mcp-protocol-version', 'nuclino-api-key'],
-      exposedHeaders: ['mcp-session-id'],
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'X-MCP-Auth-Key'],
       credentials: false
     };
     this.app.use(cors(corsOptions));
@@ -36,123 +43,94 @@ export class HttpTransport implements ITransport {
   }
 
   private setupRoutes() {
-    // Handle POST requests for client-to-server communication
-    this.app.post('/mcp', async (req, res) => {
-      // Log incoming headers from MCP client
-      logger.info('Received MCP request', {
-        sessionId: req.headers['mcp-session-id'],
-        nuclinoApiKey: req.headers['nuclino-api-key'] ? '[REDACTED]' : undefined,
-        userAgent: req.headers['user-agent']
-      });
+    // Handle GET requests to establish SSE connection
+    this.app.get('/sse', async (req, res) => {
+      logger.info('Received GET request to /sse (establishing SSE stream)');
       
-      // Check for existing session ID
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport: StreamableHTTPServerTransport;
-
-      if (sessionId && this.transports[sessionId]) {
-        // Reuse existing transport
-        transport = this.transports[sessionId];
-        
-        // Update API key for existing session
-        const nuclinoApiKey = req.headers['nuclino-api-key'] as string;
-        if (nuclinoApiKey) {
-          this.apiKeys[sessionId] = nuclinoApiKey;
-          // Update the repository with the new API key
-          if (this.repositories[sessionId]) {
-            this.repositories[sessionId].updateApiKey(nuclinoApiKey);
-          }
-        }
-      } else if (!sessionId && isInitializeRequest(req.body)) {
-        // New initialization request
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (sessionId) => {
-            // Store the transport by session ID
-            this.transports[sessionId] = transport;
-          },
-          // DNS rebinding protection is disabled by default for backwards compatibility. If you are running this server
-          // locally, make sure to set:
-          // enableDnsRebindingProtection: true,
-          // allowedHosts: ['127.0.0.1'],
-        });
-
-        // Clean up transport when closed
-        transport.onclose = () => {
-          if (transport.sessionId) {
-            delete this.transports[transport.sessionId];
-            delete this.apiKeys[transport.sessionId];
-            delete this.repositories[transport.sessionId];
-          }
-        };
-
-        // Get API key from headers or environment variable
-        const nuclinoApiKey = (req.headers['nuclino-api-key'] as string) || process.env.NUCLINO_API_KEY;
-        const apiKeySource = req.headers['nuclino-api-key'] ? 'header' : 'environment variable';
-        
+      try {
+        // Validate Nuclino API key
+        const nuclinoApiKey = this.config.apiKey;
         if (!nuclinoApiKey) {
-          logger.error('Nuclino API key not provided in header or environment variable');
-          res.status(400).json({
+          logger.error('Nuclino API key not configured');
+          res.status(500).send('Server configuration error: Nuclino API key not set');
+          return;
+        }
+
+        // Create a new SSE transport for the client
+        // The endpoint for POST messages is '/messages'
+        const transport = new SSEServerTransport('/messages', res);
+        
+        // Get the session ID
+        const sessionId = transport.sessionId;
+        
+        // Store the transport by session ID
+        this.transports.set(sessionId, transport);
+        
+        // Set up onclose handler to clean up transport when closed
+        transport.onclose = () => {
+          logger.info(`SSE transport closed for session ${sessionId}`);
+          this.transports.delete(sessionId);
+        };
+        
+        // Create and connect the MCP server
+        const server = this.createMcpServer(nuclinoApiKey);
+        await server.connect(transport);
+        
+        logger.info(`Established SSE stream with session ID: ${sessionId}`);
+      } catch (error) {
+        logger.error('Error establishing SSE stream:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error establishing SSE stream');
+        }
+      }
+    });
+
+    // Handle POST requests for client messages
+    this.app.post('/messages', async (req, res) => {
+      logger.info('Received POST request to /messages');
+      
+      // Check MCP authentication if enabled
+      if (this.mcpAuthKey) {
+        const authHeader = req.headers['x-mcp-auth-key'] as string | undefined;
+        if (!authHeader || authHeader !== this.mcpAuthKey) {
+          logger.warn('Unauthorized request: Invalid or missing X-MCP-Auth-Key header');
+          res.status(401).json({
             jsonrpc: '2.0',
             error: {
-              code: -32000,
-              message: 'Bad Request: Nuclino API key must be provided either via nuclino-api-key header or NUCLINO_API_KEY environment variable',
+              code: -32001,
+              message: 'Unauthorized: Invalid or missing X-MCP-Auth-Key header',
             },
             id: null,
           });
           return;
         }
-        
-        logger.info(`API key provided via ${apiKeySource}`);
-
-        // Create server for this session
-        const server = this.createMcpServer(nuclinoApiKey);
-        await server.connect(transport);
-
-        // Store repository for this session
-        if (transport.sessionId) {
-          const rateLimiter = new RateLimiter(150, 1); // 150 requests per minute
-          const retryHandler = new RetryHandler({
-            maxRetries: 3,
-            baseDelay: 1000,
-            maxDelay: 30000,
-            backoffFactor: 2
-          });
-          const nuclinoRepository = new NuclinoRepository(nuclinoApiKey, rateLimiter, retryHandler);
-          this.repositories[transport.sessionId] = nuclinoRepository;
-        }
-      } else {
-        // Invalid request
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: 'Bad Request: No valid session ID provided',
-          },
-          id: null,
-        });
+      }
+      
+      // Extract session ID from URL query parameter
+      const sessionId = req.query.sessionId as string | undefined;
+      if (!sessionId) {
+        logger.error('No session ID provided in request URL');
+        res.status(400).send('Missing sessionId parameter');
         return;
       }
-
-      // Handle the request
-      await transport.handleRequest(req, res, req.body);
+      
+      const transport = this.transports.get(sessionId);
+      if (!transport) {
+        logger.error(`No active transport found for session ID: ${sessionId}`);
+        res.status(404).send('Session not found');
+        return;
+      }
+      
+      try {
+        // Handle the POST message with the transport
+        await transport.handlePostMessage(req, res, req.body);
+      } catch (error) {
+        logger.error('Error handling request:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error handling request');
+        }
+      }
     });
-
-    // Handle GET requests for server-to-client notifications via SSE
-    this.app.get('/mcp', this.handleSessionRequest.bind(this));
-
-    // Handle DELETE requests for session termination
-    this.app.delete('/mcp', this.handleSessionRequest.bind(this));
-  }
-
-  private async handleSessionRequest(req: express.Request, res: express.Response) {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !this.transports[sessionId]) {
-      res.status(400).send('Invalid or missing session ID');
-      return;
-    }
-
-    const transport = this.transports[sessionId];
-    await transport.handleRequest(req, res);
   }
 
   private createMcpServer(apiKey: string): McpServer {
