@@ -7,9 +7,22 @@ services:
     branch: main
     deploy_on_push: true
     repo: blubblub/nuclino-mcp
+  run_command: node dist/index.js
+  http_port: 3000
   instance_count: 1
-  routes:
-  - path: /
-#domains:
-#- domain: wiki.mcp.blubblub.org
-#  type: PRIMARY
+  instance_size_slug: basic-xxs
+  health_check:
+    http_path: /health
+  envs:
+  - key: NUCLINO_API_KEY
+    value: tGpW/2WJAMv7zYFWeCbvUCYqVL3wexXSf5Eas2TZ
+    scope: RUN_TIME
+  - key: TRANSPORT_TYPE
+    value: http
+    scope: RUN_TIME
+  - key: PORT
+    value: "3000"
+    scope: RUN_TIME
+  - key: NODE_ENV
+    value: production
+    scope: RUN_TIME
