@@ -4,7 +4,7 @@ import winston from "winston";
 const createLogger = (useStderr: boolean = false) => {
   const transports: winston.transport[] = [
     new winston.transports.File({
-      filename: './application.log',
+      filename: '/tmp/nuclino-mcp-server.log',
       level: 'info',
       format: winston.format.combine(
         winston.format.timestamp(),
